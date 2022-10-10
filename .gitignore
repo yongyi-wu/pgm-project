@@ -1,5 +1,13 @@
+__pycache__
 .gitignore
+.vscode/
 .idea/
+.eggs/
+
+logs/
+outputs/
+dive_into_graphs.egg-info/
+benchmarks/xgraph/datasets/
 benchmarks/xgraph/checkpoints/
 benchmarks/xgraph/*.zip
 benchmarks/xgraph/*.sh

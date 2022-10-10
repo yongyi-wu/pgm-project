@@ -79,10 +79,10 @@ def pipeline(config):
                               reward_method=config.explainers.param.reward_method,
                               subgraph_building_method=config.explainers.param.subgraph_building_method,
                               save_dir=explanation_saving_dir)
-        index = 0
+
         x_collector = XCollector()
         for i, data in enumerate(dataset[test_indices]):
-            index += 1
+            print(f'{i / len(test_indices) * 100:.1f}% of {len(test_indices)}')
             data.to(device)
             data.edge_index = add_remaining_self_loops(data.edge_index, num_nodes=data.num_nodes)[0]
             saved_MCTSInfo_list = None
@@ -158,7 +158,8 @@ def pipeline(config):
                               subgraph_building_method=config.explainers.param.subgraph_building_method,
                               save_dir=explanation_saving_dir)
 
-        for node_idx in node_indices:
+        for i, node_idx in enumerate(node_indices):
+            print(f'{i / len(node_indices) * 100:.1f}% of {len(node_indices)}')
             data.to(device)
             saved_MCTSInfo_list = None
 

@@ -140,7 +140,7 @@ class GNNExplainer(ExplainerBase):
             self.subset, _, _, self.hard_edge_mask = subgraph(
                 node_idx, self.__num_hops__, self_loop_edge_index, relabel_nodes=True,
                 num_nodes=None, flow=self.__flow__())
-            self.new_node_idx = torch.where(self.subset == node_idx)[0]
+            self.new_node_idx = torch.where(self.subset == node_idx)[0].item()
 
         if kwargs.get('edge_masks'):
             edge_masks = kwargs.pop('edge_masks')

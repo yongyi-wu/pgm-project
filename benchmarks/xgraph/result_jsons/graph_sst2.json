@@ -1,0 +1,29 @@
+{
+  "gnn_explainer": {
+    "0.5": {
+      "fidelity": 0.18533018231391907,
+      "fidelity_inv": 0.0764218419790268,
+      "sparsity": 0.505912721157074,
+      "accuracy": NaN,
+      "stability": NaN
+    }
+  },
+  "pgexplainer": {
+    "0.5": {
+      "fidelity": 0.2518017590045929,
+      "fidelity_inv": 0.02222847007215023,
+      "sparsity": 0.505912721157074,
+      "accuracy": NaN,
+      "stability": NaN
+    }
+  },
+  "subgraphx": {
+    "5": {
+      "fidelity": 0.2919737994670868,
+      "fidelity_inv": -0.024392280727624893,
+      "sparsity": 0.720096230506897,
+      "accuracy": NaN,
+      "stability": NaN
+    }
+  }
+}

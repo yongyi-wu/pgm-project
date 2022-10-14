@@ -188,7 +188,7 @@ def pipeline(config):
 
     if os.path.isfile(pgexplainer_saving_path):
         print("Load saved PGExplainer model...")
-        state_dict = torch.load(pgexplainer_saving_path)
+        state_dict = torch.load(pgexplainer_saving_path, map_location=device)
         state_dict = compatible_state_dict(state_dict)
         pgexplainer.load_state_dict(state_dict)
     else:
@@ -197,7 +197,7 @@ def pipeline(config):
         else:
             pgexplainer.train_explanation_network(dataset)
         torch.save(pgexplainer.state_dict(), pgexplainer_saving_path)
-        state_dict = torch.load(pgexplainer_saving_path)
+        state_dict = torch.load(pgexplainer_saving_path, map_location=device)
         state_dict = compatible_state_dict(state_dict)
         pgexplainer.load_state_dict(state_dict)
 

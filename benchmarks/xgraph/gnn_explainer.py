@@ -71,14 +71,14 @@ def pipeline(config):
     gnn_explainer = GNNExplainer(model,
                                  epochs=config.explainers.param.epochs,
                                  lr=config.explainers.param.lr,
-                                 coff_size=config.explainers.param.coff_size,
-                                 coff_ent=config.explainers.param.coff_ent,
+                                 coff_edge_size=config.explainers.param.coff_size,
+                                 coff_edge_ent=config.explainers.param.coff_ent,
                                  explain_graph=config.models.param.graph_classification)
     gnn_explainer_perturb = GNNExplainer(model,
                                  epochs=config.explainers.param.epochs,
                                  lr=config.explainers.param.lr,
-                                 coff_size=config.explainers.param.coff_size,
-                                 coff_ent=config.explainers.param.coff_ent,
+                                 coff_edge_size=config.explainers.param.coff_size,
+                                 coff_edge_ent=config.explainers.param.coff_ent,
                                  explain_graph=config.models.param.graph_classification)
     gnn_explainer.device = device
 

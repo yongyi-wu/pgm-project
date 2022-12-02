@@ -6,37 +6,17 @@ import torch
 from torch.autograd import Variable
 
 from benchmarks.xgraph.gnnNets import GCNNet
-from subgraphx import SubgraphX 
+from dig.xgraph.method import SubgraphX 
 
 
 # subgraphX will return nodes as a result, we will try to use the nodes that subgraphX returns to
 # guide the training of a DNN (GNN) that takes as input the same x (node + edge) as subgraphX and
 # try to get similar results as subgraphX
 
-# GCNNet?
-subgraphx = SubgraphX()
-d_model = subgraphx.model.gnn_latent_dim[-1]
-actor = GCNNet(
-    input_dim=subgraphx.model.input_dim,
-    output_dim=1,
-    gnn_latent_dim=subgraphx.model.gnn_latent_dim,
-    gnn_dropout=subgraphx.model.gnn_dropout,
-    gnn_emb_normalization=subgraphx.model.gnn_emb_normalization,
-    gcn_adj_normalization=subgraphx.model.gcn_adj_normalization,
-    add_self_loop=subgraphx.model.add_self_loop,
-    gnn_nonlinear=subgraphx.model.gnn_nonlinear,
-    readout='identity',
-    concate=subgraphx.model.concate,
-    fc_latent_dim=subgraphx.model.fc_latent_dim,
-    fc_dropout=subgraphx.model.fc_dropout,
-    fc_nonlinear=subgraphx.model.fc_nonlinear,
-)
-actor(x, edge_index)
-
 class Actor_Critic(object):
     # Implementation of N-step Advantage Actor Critic.
 
-    def __init__(self, critic: SubgraphX, actor: GCNNet, actor_lr, actor_epoch):
+    def __init__(self, critic: SubgraphX, actor: GCNNet, actor_lr=0.01, actor_epoch=200):
         # critic will be subgraphX net
         # actor will be our custom-defined GNN
         self.actor = actor
@@ -56,7 +36,7 @@ class Actor_Critic(object):
         self.actor_optim.zero_grad()
         # probability of selecting the nodes
         prediction_results = self.actor.forward(x=x, edge_index=edge_index)
-        loss = self.criterion(torch.as_tensor(one_hot_encoding, dtype=one_hot_encoding.dtpye), prediction_results)
+        loss = self.criterion(prediction_results.squeeze(), one_hot_encoding.float())
         loss.backward()
         self.actor_optim.step()
         return loss

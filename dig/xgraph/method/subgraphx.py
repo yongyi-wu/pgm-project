@@ -756,7 +756,8 @@ class SubgraphX(object):
     def explain(self, x: Tensor, edge_index: Tensor, label: int,
                 max_nodes: int = 5,
                 node_idx: Optional[int] = None,
-                saved_MCTSInfo_list: Optional[List[List]] = None):
+                saved_MCTSInfo_list: Optional[List[List]] = None,
+                is_critic=False):
         probs = self.model(x, edge_index).squeeze().softmax(dim=-1)
         if self.explain_graph:
             if saved_MCTSInfo_list:
@@ -794,7 +795,6 @@ class SubgraphX(object):
         # keep the important structure
         masked_node_list = [node for node in range(tree_node_x.data.x.shape[0])
                             if node in tree_node_x.coalition]
-
         # remove the important structure, for node_classification,
         # remain the node_idx when remove the important structure
         maskout_node_list = [node for node in range(tree_node_x.data.x.shape[0])
@@ -821,7 +821,7 @@ class SubgraphX(object):
                         'origin': probs[node_idx, label].item(),
                         'sparsity': sparsity_score}
 
-        return results, related_pred
+        return maskout_node_list if is_critic else results, related_pred
 
     def __call__(self, x: Tensor, edge_index: Tensor, **kwargs)\
             -> Tuple[None, List, List[Dict]]:

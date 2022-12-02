@@ -4,6 +4,7 @@ __pycache__
 .idea/
 .eggs/
 
+old/
 logs/
 outputs/
 dive_into_graphs.egg-info/

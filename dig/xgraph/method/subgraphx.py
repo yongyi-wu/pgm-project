@@ -821,7 +821,7 @@ class SubgraphX(object):
                         'origin': probs[node_idx, label].item(),
                         'sparsity': sparsity_score}
 
-        return maskout_node_list if is_critic else results, related_pred
+        return results, (related_pred, maskout_node_list) if is_critic else related_pred
 
     def __call__(self, x: Tensor, edge_index: Tensor, **kwargs)\
             -> Tuple[None, List, List[Dict]]:

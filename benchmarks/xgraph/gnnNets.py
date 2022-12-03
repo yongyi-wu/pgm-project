@@ -255,14 +255,14 @@ class GCNConv(GCNConv):
 class GCNNet(GNNBase):
     def __init__(self,
                  input_dim: int,
-                 output_dim: int,
+                 output_dim: Union[int, List[int]],
                  gnn_latent_dim: Union[List[int]],
                  gnn_dropout: float = 0.0,
                  gnn_emb_normalization: bool = False,
                  gcn_adj_normalization: bool = True,
                  add_self_loop: bool = True,
                  gnn_nonlinear: str = 'relu',
-                 readout: str = 'mean',
+                 readout: Union[str, List[str]] = 'mean',
                  concate: bool = False,
                  fc_latent_dim: Union[List[int]] = [],
                  fc_dropout: float = 0.0,
@@ -282,7 +282,8 @@ class GCNNet(GNNBase):
         self.gnn_nonlinear = get_nonlinear(gnn_nonlinear)
         self.concate = concate
         # readout
-        self.readout_layer = GNNPool(readout)
+        self.readout = readout
+        self.readout_layer = GNNPool(self.readout if isinstance(self.readout, str) else self.readout[0])
         # FC part
         self.fc_latent_dim = fc_latent_dim
         self.fc_dropout = fc_dropout
@@ -304,15 +305,27 @@ class GCNNet(GNNBase):
                                       add_self_loops=self.add_self_loop,
                                       normalize=self.gcn_adj_normalization))
         # FC layers
+        output_dim = self.output_dim if isinstance(self.output_dim, int) else self.output_dim[0]
         self.mlps = nn.ModuleList()
         if self.num_mlp_layers > 1:
             self.mlps.append(nn.Linear(self.emb_dim, self.fc_latent_dim[0]))
-
             for i in range(1, self.num_mlp_layers-1):
                 self.mlps.append(nn.Linear(self.fc_latent_dim[i-1], self.fc_latent_dim[1]))
-            self.mlps.append(nn.Linear(self.fc_latent_dim[-1], self.output_dim))
+            self.mlps.append(nn.Linear(self.fc_latent_dim[-1], output_dim))
         else:
-            self.mlps.append(nn.Linear(self.emb_dim, self.output_dim))
+            self.mlps.append(nn.Linear(self.emb_dim, output_dim))
+        
+        if not isinstance(self.output_dim, int):
+            output_dim = self.output_dim[1]
+            self.aux_readout_layer = GNNPool(self.readout[1])
+            self.aux = nn.ModuleList()
+            if self.num_mlp_layers > 1:
+                self.aux.append(nn.Linear(self.emb_dim, self.fc_latent_dim[0]))
+                for i in range(1, self.num_mlp_layers-1):
+                    self.aux.append(nn.Linear(self.fc_latent_dim[i-1], self.fc_latent_dim[1]))
+                self.aux.append(nn.Linear(self.fc_latent_dim[-1], output_dim))
+            else:
+                self.aux.append(nn.Linear(self.emb_dim, output_dim))
 
     def device(self):
         return self.convs[0].weight.device
@@ -338,13 +351,20 @@ class GCNNet(GNNBase):
         _, _, batch = self._argsparse(*args, **kwargs)
         # node embedding for GNN
         emb = self.get_emb(*args, **kwargs)
-        # pooling process
-        x = self.readout_layer(emb, batch)
 
+        mlpx = self.readout_layer(emb, batch)
         for i in range(self.num_mlp_layers - 1):
-            x = self.mlps[i](x)
-            x = self.fc_nonlinear(x)
-            x = F.dropout(x, p=self.fc_dropout)
+            mlpx = self.mlps[i](mlpx)
+            mlpx = self.fc_nonlinear(mlpx)
+            mlpx = F.dropout(mlpx, p=self.fc_dropout)
+        logits = self.mlps[-1](mlpx)
 
-        logits = self.mlps[-1](x)
+        if not isinstance(self.output_dim, int):
+            logits = [logits]
+            auxx = self.aux_readout_layer(emb, batch)
+            for i in range(self.num_mlp_layers - 1):
+                auxx = self.aux[i](auxx)
+                auxx = self.fc_nonlinear(auxx)
+                auxx = F.dropout(auxx, p=self.fc_dropout)
+            logits.append(self.aux[-1](auxx))
         return logits

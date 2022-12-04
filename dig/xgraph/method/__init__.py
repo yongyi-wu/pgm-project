@@ -6,6 +6,7 @@ from .gradcam import GradCAM
 from .pgexplainer import PGExplainer
 from .subgraphx import SubgraphX, MCTS
 from .actor_critic import Actor_Critic
+from .base_explainer import ExplainerBase
 
 __all__ = [
     'DeepLIFT',
@@ -16,5 +17,6 @@ __all__ = [
     'PGExplainer',
     'MCTS',
     'SubgraphX',
-    'Actor_Critic'
+    'Actor_Critic',
+    'ExplainerBase'
 ]

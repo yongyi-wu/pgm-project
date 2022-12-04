@@ -254,32 +254,33 @@ class ExplainerBase(nn.Module):
         node_idx = 0 if node_idx is None else node_idx  # graph level: 0, node level: node_idx
         related_preds = []
 
-        # change the mask from -inf ~ +inf into 0 ~ 1
-        for ex_label, edge_mask in enumerate(edge_masks):
-            if self.hard_edge_mask is not None:
-                sparsity = 1.0 - (edge_mask[self.hard_edge_mask] != 0).sum() / edge_mask[self.hard_edge_mask].size(0)
-            else:
-                sparsity = 1.0 - (edge_mask != 0).sum() / edge_mask.size(0)
+        with torch.no_grad():
+            # change the mask from -inf ~ +inf into 0 ~ 1
+            for ex_label, edge_mask in enumerate(edge_masks):
+                if self.hard_edge_mask is not None:
+                    sparsity = 1.0 - (edge_mask[self.hard_edge_mask] != 0).sum() / edge_mask[self.hard_edge_mask].size(0)
+                else:
+                    sparsity = 1.0 - (edge_mask != 0).sum() / edge_mask.size(0)
 
-            self.edge_mask.data = torch.ones(edge_mask.size(), device=self.device)
-            ori_pred = self.model(x=x, edge_index=edge_index, **kwargs)
+                self.edge_mask.data = torch.ones(edge_mask.size(), device=self.device)
+                ori_pred = self.model(x=x, edge_index=edge_index, **kwargs)
 
-            self.edge_mask.data = edge_mask
-            masked_pred = self.model(x=x, edge_index=edge_index, **kwargs)
+                self.edge_mask.data = edge_mask.to(self.device).float()
+                masked_pred = self.model(x=x, edge_index=edge_index, **kwargs)
 
-            # mask out important elements for fidelity calculation
-            self.edge_mask.data = 1.0 - edge_mask  # keep Parameter's id
-            maskout_pred = self.model(x=x, edge_index=edge_index, **kwargs)
+                # mask out important elements for fidelity calculation
+                self.edge_mask.data = 1.0 - edge_mask.to(self.device).float()  # keep Parameter's id
+                maskout_pred = self.model(x=x, edge_index=edge_index, **kwargs)
 
-            # zero_mask
-            self.edge_mask.data = torch.zeros(edge_mask.size(), device=self.device)
-            zero_mask_pred = self.model(x=x, edge_index=edge_index, **kwargs)
+                # zero_mask
+                self.edge_mask.data = torch.zeros(edge_mask.size(), device=self.device)
+                zero_mask_pred = self.model(x=x, edge_index=edge_index, **kwargs)
 
-            related_preds.append({'zero': zero_mask_pred[node_idx],
-                                  'masked': masked_pred[node_idx],
-                                  'maskout': maskout_pred[node_idx],
-                                  'origin': ori_pred[node_idx],
-                                  'sparsity': sparsity})
+                related_preds.append({'zero': zero_mask_pred[node_idx],
+                                    'masked': masked_pred[node_idx],
+                                    'maskout': maskout_pred[node_idx],
+                                    'origin': ori_pred[node_idx],
+                                    'sparsity': sparsity})
 
             # Adding proper activation function to the models' outputs.
             tmp_result_dict = {}

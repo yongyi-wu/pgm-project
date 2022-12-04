@@ -12,7 +12,7 @@ from dig.xgraph.method import SubgraphX
 class Actor_Critic(object):
     # Implementation of N-step Advantage Actor Critic.
 
-    def __init__(self, critic: SubgraphX, actor: GCNNet, actor_lr=0.01, actor_epoch=200, lamda=1):
+    def __init__(self, critic: SubgraphX, actor: GCNNet, batch_size, actor_lr=0.005, actor_epoch=200, lamda=3):
         # critic will be subgraphX net
         # actor will be our custom-defined GNN
         self.actor = actor
@@ -22,6 +22,9 @@ class Actor_Critic(object):
         self.critic = critic
         self.bce = nn.BCEWithLogitsLoss()
         self.lamda = lamda
+        self.loss = 0
+        self.counter = 0
+        self.batch_size = batch_size
 
     def criterion(self, ac_ex, mcts_ex, ac_class, gnn_class):
         return self.bce(ac_ex, mcts_ex) - self.lamda * (torch.softmax(ac_class, -1) * gnn_class).sum()
@@ -33,7 +36,9 @@ class Actor_Critic(object):
         return one_hot_encoding
 
     def actor_step(self, x, edge_index, one_hot_encoding, prediction_dist, node_idx=None):
-        self.actor_optim.zero_grad()
+        if self.counter == 0:
+            self.actor_optim.zero_grad()
+        self.counter += 1
         # probability of selecting the nodes
         explanation, classification = self.actor(x=x, edge_index=edge_index)
         if node_idx is not None:
@@ -45,19 +50,24 @@ class Actor_Critic(object):
             classification,
             prediction_dist.detach().to(classification.device)
         )
-        loss.backward()
-        self.actor_optim.step()
+        self.loss += 1/self.batch_size * loss
+        if self.counter % self.batch_size == 0:
+            print(f"loss: {loss} at counter {self.counter}")
+            self.loss.backward()
+            self.loss = 0
+            self.actor_optim.step()
+            self.actor_optim.zero_grad()
         return explanation
 
-    def train(self, x, edge_index):
-        one_hot_encoding = self.critic_step(x, edge_index)
-        loss = self.actor_step(x, edge_index, one_hot_encoding)
-        return loss
+    # def train(self, x, edge_index):
+    #     one_hot_encoding = self.critic_step(x, edge_index)
+    #     loss = self.actor_step(x, edge_index, one_hot_encoding)
+    #     return loss
     
     def test(self, x, edge_index):
         with torch.no_grad():
-            prediction_results = self.actor.forward(x=x, edge_index=edge_index)
-            return prediction_results
+            explanation, classification = self.actor.forward(x=x, edge_index=edge_index)
+            return explanation
 
 
 

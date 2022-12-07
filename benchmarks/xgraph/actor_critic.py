@@ -97,7 +97,7 @@ def pipeline(config):
             fc_dropout=subgraphx.model.fc_dropout,
             fc_nonlinear='relu',
         ).to(device)
-        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=8, lamda=10)
+        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=8, lamda=1)
         base = ExplainerBase(model)
         base.device = device
         x_collector = XCollector()
@@ -130,9 +130,9 @@ def pipeline(config):
             # and come up with a new explain_result
             num_nodes = data.x.shape[0]
             one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device) # [1 if i in maskout_node_list else 0 for i in range(num_nodes)]
-            explanation = actor_critic.actor_step(data.x, data.edge_index, one_hot_encoding, prediction_dist)
+            explanation = actor_critic.actor_step(data.x, data.edge_index, one_hot_encoding, data.y)
             new_maskout_node_list_probs = torch.sigmoid(explanation.squeeze())
-            selection_threshold = 0.5
+            selection_threshold = 0.8
             new_maskout_node_list = torch.arange(len(new_maskout_node_list_probs))[new_maskout_node_list_probs > selection_threshold]
 
             base.__set_masks__(data.x, data.edge_index)
@@ -237,7 +237,7 @@ def pipeline(config):
             fc_dropout=subgraphx.model.fc_dropout,
             fc_nonlinear='relu',
         ).to(device)
-        actor_critic = Actor_Critic(critic=subgraphx, actor=actor)
+        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=32)
 
         train_indices, test_indices = train_test_split(node_indices, test_size=0.8)
 

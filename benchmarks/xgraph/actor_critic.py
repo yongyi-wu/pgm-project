@@ -17,16 +17,17 @@ from dig.xgraph.evaluation import XCollector
 from dig.xgraph.utils.compatibility import compatible_state_dict
 from dig.xgraph.method.subgraphx import GnnNetsNC2valueFunc, GnnNetsGC2valueFunc, gnn_score, sparsity
 IS_FRESH = False
-
-
+cur_lamb = 1
+cur_st = 0.5
 @hydra.main(config_path="config", config_name="config")
 def pipeline(config):
+
     config.models.param = config.models.param[config.datasets.dataset_name]
     config.explainers.param = config.explainers.param[config.datasets.dataset_name]
     config.models.param.add_self_loop = False
     if not os.path.isdir(config.record_filename):
         os.makedirs(config.record_filename)
-    config.record_filename = os.path.join(config.record_filename, f"{config.datasets.dataset_name}.json")
+    config.record_filename = os.path.join(config.record_filename, f"{config.datasets.dataset_name}_selection_threshold_{cur_st}_lambda_{cur_lamb}.json")
     print(OmegaConf.to_yaml(config))
     recorder = Recorder(config.record_filename)
 
@@ -97,13 +98,14 @@ def pipeline(config):
             fc_dropout=subgraphx.model.fc_dropout,
             fc_nonlinear='relu',
         ).to(device)
-        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=8, lamda=1)
+        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=8, lamda=cur_lamb)
         base = ExplainerBase(model)
         base.device = device
         x_collector = XCollector()
 
         train_indices, test_indices = train_test_split(test_indices, test_size=0.8)
 
+        # training loop
         for i, data in enumerate(dataset[test_indices]):
             print(f'{i / len(test_indices) * 100:.1f}% of {len(test_indices)}')
             data.to(device)
@@ -129,10 +131,10 @@ def pipeline(config):
             # TODO: need to use the maskout node lists as correct prediction to train the GNN model
             # and come up with a new explain_result
             num_nodes = data.x.shape[0]
-            one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device) # [1 if i in maskout_node_list else 0 for i in range(num_nodes)]
+            one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device)
             explanation = actor_critic.actor_step(data.x, data.edge_index, one_hot_encoding, data.y)
             new_maskout_node_list_probs = torch.sigmoid(explanation.squeeze())
-            selection_threshold = 0.8
+            selection_threshold = cur_st
             new_maskout_node_list = torch.arange(len(new_maskout_node_list_probs))[new_maskout_node_list_probs > selection_threshold]
 
             base.__set_masks__(data.x, data.edge_index)
@@ -141,64 +143,53 @@ def pipeline(config):
             edge_mask = (node_mask[row] == 1) & (node_mask[col] == 1)
             related_preds = base.eval_related_pred(data.x, data.edge_index, [edge_mask])[0]
 
-            # value_func = GnnNetsGC2valueFunc(model, target_class=prediction)
-            # masked_score = gnn_score(new_maskout_node_list,
-            #                 Data(x=data.x, edge_index=data.edge_index),
-            #                 value_func=value_func,
-            #                 subgraph_building_method=actor_critic.critic.subgraph_building_method)
-
-            # maskout_score = gnn_score(new_maskout_node_list,
-            #                         Data(x=data.x, edge_index=data.edge_index),
-            #                         value_func=value_func,
-            #                         subgraph_building_method=actor_critic.critic.subgraph_building_method)
-
-            # sparsity_score = sparsity(new_maskout_node_list, Data(x=data.x, edge_index=data.edge_index),
-            #                         subgraph_building_method=actor_critic.critic.subgraph_building_method)
-
-            # related_preds = {
-            #     'masked': masked_score,
-            #     'maskout': maskout_score,
-            #     'origin': prediction_dist[0, prediction].item(),
-            #     'sparsity': sparsity_score
-            # }
-            # print(related_preds)
-
-            # title_sentence = f'fide: {(related_preds["origin"] - related_preds["maskout"]):.3f}, ' \
-            #                  f'fide_inv: {(related_preds["origin"] - related_preds["masked"]):.3f}, ' \
-            #                  f'spar: {related_preds["sparsity"]:.3f}'
-
-            # # explain_result = subgraphx.read_from_MCTSInfo_list(explain_result)
-            # if isinstance(dataset, SynGraphDataset):
-            #     explanation = find_closest_node_result(explain_result, max_nodes=config.explainers.max_ex_size)
-            #     edge_mask = data.edge_index[0].cpu().apply_(lambda x: x in explanation.coalition).bool() & \
-            #                 data.edge_index[1].cpu().apply_(lambda x: x in explanation.coalition).bool()
-            #     edge_mask = edge_mask.float().numpy()
-            #     motif_edge_mask = dataset.gen_motif_edge_mask(data).float().cpu().numpy()
-            #     accuracy = accuracy_score(edge_mask, motif_edge_mask)
-            #     roc_auc = roc_auc_score(edge_mask, motif_edge_mask)
-            #     related_preds['accuracy'] = roc_auc
-
-            # if hasattr(dataset, 'supplement'):
-            #     words = dataset.supplement['sentence_tokens'][str(test_indices[i])]
-            # else:
-            #     words = None
-
-            # predict_true = 'True' if prediction == data.y.item() else "False"
-            # subgraphx.visualization(explain_result,
-            #                         max_nodes=config.explainers.max_ex_size,
-            #                         plot_utils=plot_utils,
-            #                         title_sentence=title_sentence,
-            #                         vis_name=os.path.join(explanation_saving_dir,
-            #                                               f'example_{test_indices[i]}_'
-            #                                               f'prediction_{prediction}_'
-            #                                               f'label_{data.y.item()}_'
-            #                                               f'pred_{predict_true}.png'),
-            #                         words=words)
-            # explain_result = [explain_result]
-
             explain_result = []
             related_preds = [related_preds]
-            x_collector.collect_data(explain_result, related_preds, label=0)
+            # x_collector.collect_data(explain_result, related_preds, label=0)
+
+        # test loop
+        for i, data in enumerate(dataset[train_indices]):
+            with torch.no_grad():
+                print(f'{i / len(train_indices) * 100:.1f}% of {len(train_indices)}')
+                data.to(device)
+                data.edge_index = add_remaining_self_loops(data.edge_index, num_nodes=data.num_nodes)[0]
+                saved_MCTSInfo_list = None
+                prediction_dist = model(data)
+                prediction = prediction_dist.argmax(-1).item()
+                if os.path.isfile(os.path.join(explanation_saving_dir, f'example_{train_indices[i]}.pt')) and not IS_FRESH:
+                    saved_MCTSInfo_list = torch.load(os.path.join(explanation_saving_dir, f'example_{train_indices[i]}.pt'))
+                    # print(f"load example {train_indices[i]}.")
+
+                explain_result, (related_preds, maskout_node_list) = \
+                    subgraphx.explain(data.x, data.edge_index,
+                                    max_nodes=config.explainers.max_ex_size,
+                                    label=prediction,
+                                    saved_MCTSInfo_list=saved_MCTSInfo_list,
+                                    is_critic=True)
+                # NOTE: USE SUBGRAPHX TO SAVE
+                # torch.save(explain_result, os.path.join(explanation_saving_dir, f'example_{train_indices[i]}.pt'))
+
+                # print(f"masked node list before: {maskout_node_list}")
+
+                # TODO: need to use the maskout node lists as correct prediction to train the GNN model
+                # and come up with a new explain_result
+                num_nodes = data.x.shape[0]
+                one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device)
+                explanation = actor_critic.test(data.x, data.edge_index)
+
+                new_maskout_node_list_probs = torch.sigmoid(explanation.squeeze())
+                selection_threshold = 0.8
+                new_maskout_node_list = torch.arange(len(new_maskout_node_list_probs))[new_maskout_node_list_probs > selection_threshold]
+
+                base.__set_masks__(data.x, data.edge_index)
+                row, col = data.edge_index
+                node_mask = torch.isin(torch.arange(num_nodes), torch.as_tensor(new_maskout_node_list)).long()
+                edge_mask = (node_mask[row] == 1) & (node_mask[col] == 1)
+                related_preds = base.eval_related_pred(data.x, data.edge_index, [edge_mask])[0]
+
+                explain_result = []
+                related_preds = [related_preds]
+                x_collector.collect_data(explain_result, related_preds, label=0)
 
     else:
         x_collector = XCollector()
@@ -237,12 +228,16 @@ def pipeline(config):
             fc_dropout=subgraphx.model.fc_dropout,
             fc_nonlinear='relu',
         ).to(device)
-        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=32)
+        base = ExplainerBase(model)
+        base.device = device
+        actor_critic = Actor_Critic(critic=subgraphx, actor=actor, batch_size=8, lamda=cur_lamb)
+        x_collector = XCollector()
 
         train_indices, test_indices = train_test_split(node_indices, test_size=0.8)
 
-        for i, node_idx in enumerate(node_indices):
-            print(f'{i / len(node_indices) * 100:.1f}% of {len(node_indices)}')
+        # train loop
+        for i, node_idx in enumerate(train_indices):
+            print(f'{i / len(train_indices) * 100:.1f}% of {len(train_indices)}')
             data.to(device)
             saved_MCTSInfo_list = None
             prediction = predictions[node_idx].item()
@@ -263,72 +258,57 @@ def pipeline(config):
             # torch.save(explain_result, os.path.join(explanation_saving_dir, f'example_{node_idx}.pt'))
 
             num_nodes = data.x.shape[0]
-            one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device) # [1 if i in maskout_node_list else 0 for i in range(num_nodes)]
-            explanation = actor_critic.actor_step(data.x, data.edge_index, one_hot_encoding, predictions_dist, node_idx=node_idx)
+            one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device)
+            explanation = actor_critic.actor_step(data.x, data.edge_index, one_hot_encoding, data.y, node_idx=node_idx)
             new_maskout_node_list_probs = torch.sigmoid(explanation.squeeze())
-            selection_threshold = 0.6
+            selection_threshold = cur_st
             new_maskout_node_list = torch.arange(len(new_maskout_node_list_probs))[new_maskout_node_list_probs > selection_threshold]
 
-            value_func = GnnNetsNC2valueFunc(
-                model,
-                node_idx=subgraphx.mcts_state_map.new_node_idx,
-                target_class=prediction
-            )            
-            masked_score = gnn_score(new_maskout_node_list,
-                            Data(x=data.x, edge_index=data.edge_index),
-                            value_func=value_func,
-                            subgraph_building_method=actor_critic.critic.subgraph_building_method)
+            base.__set_masks__(data.x, data.edge_index)
+            row, col = data.edge_index
+            node_mask = torch.isin(torch.arange(num_nodes), torch.as_tensor(new_maskout_node_list)).long()
+            edge_mask = (node_mask[row] == 1) & (node_mask[col] == 1)
+            related_preds = base.eval_related_pred(data.x, data.edge_index, [edge_mask])[0]
 
-            maskout_score = gnn_score(new_maskout_node_list,
-                                    Data(x=data.x, edge_index=data.edge_index),
-                                    value_func=value_func,
-                                    subgraph_building_method=actor_critic.critic.subgraph_building_method)
+        # test loop
+        for i, node_idx in enumerate(test_indices):
+            with torch.no_grad():
+                print(f'{i / len(test_indices) * 100:.1f}% of {len(test_indices)}')
+                data.to(device)
+                saved_MCTSInfo_list = None
+                prediction = predictions[node_idx].item()
 
-            sparsity_score = sparsity(new_maskout_node_list, Data(x=data.x, edge_index=data.edge_index),
-                                    subgraph_building_method=actor_critic.critic.subgraph_building_method)
+                if os.path.isfile(os.path.join(explanation_saving_dir, f'example_{node_idx}.pt')) and not IS_FRESH:
+                    saved_MCTSInfo_list = torch.load(os.path.join(explanation_saving_dir,
+                                                                f'example_{node_idx}.pt'))
+                    print(f"load example {node_idx}.")
 
-            related_preds = {
-                'masked': masked_score,
-                'maskout': maskout_score,
-                'origin': predictions_dist[node_idx, prediction].item(),
-                'sparsity': sparsity_score
-            }
-            print(related_preds)
+                explain_result, (related_preds, maskout_node_list) = \
+                    subgraphx.explain(data.x, data.edge_index,
+                                    node_idx=node_idx,
+                                    max_nodes=config.explainers.max_ex_size,
+                                    label=prediction,
+                                    saved_MCTSInfo_list=saved_MCTSInfo_list,
+                                    is_critic=True)
+                # NOTE: USE SUBGRAPHX TO SAVE
+                # torch.save(explain_result, os.path.join(explanation_saving_dir, f'example_{node_idx}.pt'))
 
-            # title_sentence = f'fide: {(related_preds["origin"] - related_preds["maskout"]):.3f}, ' \
-            #                  f'fide_inv: {(related_preds["origin"] - related_preds["masked"]):.3f}, ' \
-            #                  f'spar: {related_preds["sparsity"]:.3f}'
+                num_nodes = data.x.shape[0]
+                one_hot_encoding = torch.isin(torch.arange(num_nodes), torch.as_tensor(maskout_node_list)).long().to(device)
+                explanation = actor_critic.test(data.x, data.edge_index)
+                new_maskout_node_list_probs = torch.sigmoid(explanation.squeeze())
+                selection_threshold = 0.6
+                new_maskout_node_list = torch.arange(len(new_maskout_node_list_probs))[new_maskout_node_list_probs > selection_threshold]
 
-            # explain_result = subgraphx.read_from_MCTSInfo_list(explain_result)
-            # print(f"explain result after: {explain_result}")
-            # if isinstance(dataset, SynGraphDataset):
-            #     explanation = find_closest_node_result(explain_result, max_nodes=config.explainers.max_ex_size)
-            #     edge_mask = edge_mask.float().numpy()
-            #     motif_edge_mask = dataset.gen_motif_edge_mask(data).float().cpu().numpy()
-            #     accuracy = accuracy_score(edge_mask, motif_edge_mask)
-            #     roc_auc = roc_auc_score(edge_mask, motif_edge_mask)
-            #     related_preds['accuracy'] = roc_auc
-            #
-            # if isinstance(dataset, SynGraphDataset):
-            #     motif_edge_mask = dataset.gen_motif_edge_mask(data, node_idx=node_idx)
-            #     edge_masks = [edge_mask[gc_explainer.hard_edge_mask] for edge_mask in edge_masks]
-            #     roc_aucs = [roc_auc_score(motif_edge_mask.cpu().numpy(), edge_mask.cpu().numpy())
-            #                 for edge_mask in edge_masks]
-            #     for target_label, related_pred in enumerate(related_preds):
-            #         related_preds[target_label]['accuracy'] = roc_aucs[target_label]
+                base.__set_masks__(data.x, data.edge_index)
+                row, col = data.edge_index
+                node_mask = torch.isin(torch.arange(num_nodes), torch.as_tensor(new_maskout_node_list)).long()
+                edge_mask = (node_mask[row] == 1) & (node_mask[col] == 1)
+                related_preds = base.eval_related_pred(data.x, data.edge_index, [edge_mask])[0]
 
-            # subgraphx.visualization(explain_result,
-            #                         y=data.y,
-            #                         max_nodes=config.explainers.max_ex_size,
-            #                         plot_utils=plot_utils,
-            #                         title_sentence=title_sentence,
-            #                         vis_name=os.path.join(explanation_saving_dir,
-            #                                               f'example_{node_idx}.png'))
-            # explain_result = [explain_result]
-
-            explain_result = []
-            related_preds = [related_preds]
-            x_collector.collect_data(explain_result, related_preds, label=0)
+                explain_result = []
+                related_preds = [related_preds]
+                x_collector.collect_data(explain_result, related_preds, label=0)
 
     print(f'Fidelity: {x_collector.fidelity:.4f}\n'
           f'Fidelity_inv: {x_collector.fidelity_inv:.4f}\n'
@@ -355,9 +335,17 @@ def pipeline(config):
 
 if __name__ == '__main__':
     import sys
-    sys.argv.append('explainers=subgraphx')
-    sys.argv.append(f"datasets.dataset_root={os.path.join(os.path.dirname(__file__), 'datasets')}")
-    sys.argv.append(f"models.gnn_saving_dir={os.path.join(os.path.dirname(__file__), 'checkpoints')}")
-    sys.argv.append(f"explainers.explanation_result_dir={os.path.join(os.path.dirname(__file__), 'results')}")
-    sys.argv.append(f"record_filename={os.path.join(os.path.dirname(__file__), 'result_jsons')}")
-    pipeline()
+    selection_thresholds = [0.5,0.6,0.7,0.8,0.9]
+    lambdas = [2,5,8,10,13]
+    for st in selection_thresholds:
+        cur_st = st
+        for lamb in lambdas:
+            cur_lamb = lamb
+            print(f"Current lambda {cur_lamb}")
+            print(f"Current selection_threshold {cur_st}")
+            sys.argv.append('explainers=subgraphx')
+            sys.argv.append(f"datasets.dataset_root={os.path.join(os.path.dirname(__file__), 'datasets')}")
+            sys.argv.append(f"models.gnn_saving_dir={os.path.join(os.path.dirname(__file__), 'checkpoints')}")
+            sys.argv.append(f"explainers.explanation_result_dir={os.path.join(os.path.dirname(__file__), 'results')}")
+            sys.argv.append(f"record_filename={os.path.join(os.path.dirname(__file__), 'result_jsons')}")
+            pipeline()

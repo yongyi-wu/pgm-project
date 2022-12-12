@@ -13,7 +13,7 @@ from dig.xgraph.method import SubgraphX
 class Actor_Critic(object):
     # Implementation of N-step Advantage Actor Critic.
 
-    def __init__(self, critic: SubgraphX, actor: GCNNet, batch_size, actor_lr=0.005, actor_epoch=200, lamda=3):
+    def __init__(self, critic: SubgraphX, actor: GCNNet, batch_size, actor_lr=0.002, actor_epoch=200, lamda=8):
         # critic will be subgraphX net
         # actor will be our custom-defined GNN
         self.actor = actor
@@ -49,6 +49,7 @@ class Actor_Critic(object):
 
         if node_idx is not None:
             classification = classification[node_idx].unsqueeze(0)
+            label = label[node_idx].unsqueeze(0)
 
         loss = self.criterion(
             explanation.squeeze(),
@@ -74,7 +75,6 @@ class Actor_Critic(object):
         with torch.no_grad():
             explanation, classification = self.actor.forward(x=x, edge_index=edge_index)
             return explanation
-
 
 
 
